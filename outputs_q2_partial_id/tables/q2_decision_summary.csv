@@ -1,5 +1,0 @@
-group,outcome,ate_lower,ate_upper,ate_midpoint,robust_sign,optimistic_choice,conservative_choice
-BAP_students,Prom__20162,-3.3954987834549875,3.743187347931874,0.17384428223844317,Ambiguous (sign not identified),Continue,Opt-out
-BAP_students,Tasa_aprob_20162,-0.47941721700845796,0.7103638048893524,0.1154732939404472,Ambiguous (sign not identified),Continue,Opt-out
-VAI_students,Prom__20162,-3.5246933333333326,3.787306666666666,0.13130666666666668,Ambiguous (sign not identified),Continue,Opt-out
-VAI_students,Tasa_aprob_20162,-0.5163873015873015,0.7022793650793651,0.09294603174603178,Ambiguous (sign not identified),Continue,Opt-out
