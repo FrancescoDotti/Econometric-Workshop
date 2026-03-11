@@ -1,0 +1,14 @@
+# Ignore everything by default
+*
+
+# Keep directories traversable so allow-rules below can work
+!*/
+
+# Keep this file
+!.gitignore
+
+# Keep only the requested project files
+!*.py
+!README.md
+!*.pdf
+!Data2026.xls
