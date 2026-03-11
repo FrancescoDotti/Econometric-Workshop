@@ -22,6 +22,10 @@ import seaborn as sns
 from exam2026_core import analyze_question_2, validate_required_columns
 
 
+# Base directory for this project (Econometric Workshop folder).
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
     """Create output subfolders and return table/figure paths."""
     tables_dir = os.path.join(base_output_dir, "tables")
@@ -132,20 +136,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-path",
         default="Data2026.xls",
-        help="Path to the dataset (default: Data2026.xls)",
+        help="Path to the dataset (default: Data2026.xls in Econometric Workshop)",
     )
     parser.add_argument(
         "--output-dir",
         default="outputs_q2_partial_id",
-        help="Directory where Q2 outputs are saved",
+        help="Directory where Q2 outputs are saved (inside Econometric Workshop by default)",
     )
     return parser
 
 
 def run(args: argparse.Namespace) -> None:
     """Execute full Q2 continue-vs-opt-out analysis pipeline."""
+    # Resolve input/output paths from project folder when relative paths are used.
+    data_path = args.data_path
+    if not os.path.isabs(data_path):
+        data_path = os.path.join(PROJECT_DIR, data_path)
+
+    output_dir = args.output_dir
+    if not os.path.isabs(output_dir):
+        output_dir = os.path.join(PROJECT_DIR, output_dir)
+
     # Load raw dataset.
-    df = pd.read_excel(args.data_path)
+    df = pd.read_excel(data_path)
 
     # Validate required columns before analysis.
     validate_required_columns(df)
@@ -155,7 +168,7 @@ def run(args: argparse.Namespace) -> None:
     df["VAI"] = df["VAI"].astype(int)
 
     # Create output folders.
-    tables_dir, figures_dir = ensure_dirs(args.output_dir)
+    tables_dir, figures_dir = ensure_dirs(output_dir)
 
     # Run Question 2 partial-ID comparison using the shared core formulas.
     q2 = analyze_question_2(df, tables_dir)
@@ -165,7 +178,7 @@ def run(args: argparse.Namespace) -> None:
     make_q2_graph(q2, figures_dir)
 
     # Write a plain-language markdown summary for fast interpretation.
-    report_path = write_q2_report(q2, args.output_dir)
+    report_path = write_q2_report(q2, output_dir)
 
     # Print execution summary for the user.
     print("Q2 partial-identification analysis complete.")

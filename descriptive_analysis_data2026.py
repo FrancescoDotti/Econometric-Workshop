@@ -22,6 +22,10 @@ import pandas as pd
 import seaborn as sns
 
 
+# Base directory for this project (Econometric Workshop folder).
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 def ensure_output_dirs(base_out_dir: str) -> tuple[str, str]:
     """Create output folders and return (tables_dir, figures_dir)."""
     tables_dir = os.path.join(base_out_dir, "tables")
@@ -327,30 +331,39 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-path",
         default="Data2026.xls",
-        help="Path to input dataset (default: Data2026.xls)",
+        help="Path to input dataset (default: Data2026.xls in Econometric Workshop)",
     )
     parser.add_argument(
         "--output-dir",
         default="outputs_descriptive",
-        help="Directory for tables/figures/report (default: outputs_descriptive)",
+        help="Directory for tables/figures/report (inside Econometric Workshop by default)",
     )
     return parser
 
 
 def run(args: argparse.Namespace) -> None:
     """Run the complete descriptive-analysis pipeline."""
+    # Resolve input/output paths from project folder when relative paths are used.
+    data_path = args.data_path
+    if not os.path.isabs(data_path):
+        data_path = os.path.join(PROJECT_DIR, data_path)
+
+    output_dir = args.output_dir
+    if not os.path.isabs(output_dir):
+        output_dir = os.path.join(PROJECT_DIR, output_dir)
+
     # Load dataset.
-    df = pd.read_excel(args.data_path)
+    df = pd.read_excel(data_path)
 
     # Create output structure.
-    tables_dir, figures_dir = ensure_output_dirs(args.output_dir)
+    tables_dir, figures_dir = ensure_output_dirs(output_dir)
 
     # Save summary tables and colorful figures.
     table_files = save_summary_tables(df, tables_dir)
     figure_files = save_descriptive_figures(df, figures_dir)
 
     # Save plain-language markdown report.
-    report_file = save_text_report(df, tables_dir, args.output_dir)
+    report_file = save_text_report(df, tables_dir, output_dir)
 
     # Print summary so user knows exactly where outputs are.
     print("Descriptive analysis complete.")
@@ -358,7 +371,7 @@ def run(args: argparse.Namespace) -> None:
     print(f"Tables created: {len(table_files)}")
     print(f"Figures created: {len(figure_files)}")
     print(f"Report: {report_file}")
-    print(f"Output directory: {args.output_dir}")
+    print(f"Output directory: {output_dir}")
 
 
 if __name__ == "__main__":
