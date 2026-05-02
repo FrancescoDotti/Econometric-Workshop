@@ -10,15 +10,13 @@ import pandas as pd
 
 from exam2026_core import validate_required_columns
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
-    tables_dir = os.path.join(base_output_dir, "tables")
-    figures_dir = os.path.join(base_output_dir, "figures")
-    os.makedirs(tables_dir, exist_ok=True)
-    os.makedirs(figures_dir, exist_ok=True)
-    return tables_dir, figures_dir
+def ensure_output_dir(base_output_dir: str) -> str:
+    """Create output folder if it doesn't exist."""
+    os.makedirs(base_output_dir, exist_ok=True)
+    return base_output_dir
 
 
 def analyze_q2_strong_ignorability(df: pd.DataFrame) -> pd.DataFrame:
@@ -81,13 +79,13 @@ def run(args: argparse.Namespace) -> None:
     validate_required_columns(df)
     df["BAP"] = df["BAP"].astype(int)
     df["VAI"] = df["VAI"].astype(int)
-    tables_dir, figures_dir = ensure_dirs(output_dir)
+    ensure_output_dir(output_dir)
     results = analyze_q2_strong_ignorability(df)
-    results.to_csv(os.path.join(tables_dir, "q2_strong_ignorability_results.csv"), index=False)
+    results.to_csv(os.path.join(output_dir, "q2_strong_ignorability_results.csv"), index=False)
     report_path = write_report(results, output_dir)
     print("Q2 strong ignorability analysis complete.")
     print(f"Rows in results table: {len(results)}")
-    print(f"Tables directory: {tables_dir}")
+    print(f"Output directory: {output_dir}")
     print(f"Report file: {report_path}")
 
 if __name__ == "__main__":

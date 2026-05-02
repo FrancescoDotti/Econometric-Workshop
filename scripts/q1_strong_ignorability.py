@@ -10,15 +10,13 @@ import pandas as pd
 
 from exam2026_core import validate_required_columns
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
-    tables_dir = os.path.join(base_output_dir, "tables")
-    figures_dir = os.path.join(base_output_dir, "figures")
-    os.makedirs(tables_dir, exist_ok=True)
-    os.makedirs(figures_dir, exist_ok=True)
-    return tables_dir, figures_dir
+def ensure_output_dir(base_output_dir: str) -> str:
+    """Create output folder if it doesn't exist."""
+    os.makedirs(base_output_dir, exist_ok=True)
+    return base_output_dir
 
 
 def analyze_q1_strong_ignorability(df: pd.DataFrame) -> pd.DataFrame:
@@ -32,19 +30,23 @@ def analyze_q1_strong_ignorability(df: pd.DataFrame) -> pd.DataFrame:
         if bap["Zk"].nunique() < 2:
             continue
         for outcome in ["Prom__20161", "Tasa_aprob_20161"]:
-            treated = bap[bap["Zk"] == 1][outcome].dropna()
-            control = bap[bap["Zk"] == 0][outcome].dropna()
-            if treated.empty or control.empty:
+            # Include all rows in group size (matching exam2026_core.py p_treated denominator),
+            # but only use non-missing outcomes for mean calculation.
+            treated_all = bap[bap["Zk"] == 1]
+            control_all = bap[bap["Zk"] == 0]
+            treated_obs = treated_all[outcome].dropna()
+            control_obs = control_all[outcome].dropna()
+            if treated_obs.empty or control_obs.empty:
                 continue
-            diff = treated.mean() - control.mean()
+            diff = treated_obs.mean() - control_obs.mean()
             rows.append({
                 "k": k,
                 "outcome": outcome,
-                "treated_mean": treated.mean(),
-                "control_mean": control.mean(),
+                "treated_mean": treated_obs.mean(),
+                "control_mean": control_obs.mean(),
                 "point_estimate": diff,
-                "n_treated": len(treated),
-                "n_control": len(control),
+                "n_treated": len(treated_all),  # Include missing outcomes in count
+                "n_control": len(control_all),  # Include missing outcomes in count
             })
     return pd.DataFrame(rows)
 
@@ -80,13 +82,13 @@ def run(args: argparse.Namespace) -> None:
     validate_required_columns(df)
     df["BAP"] = df["BAP"].astype(int)
     df["VAI"] = df["VAI"].astype(int)
-    tables_dir, figures_dir = ensure_dirs(output_dir)
+    ensure_output_dir(output_dir)
     results = analyze_q1_strong_ignorability(df)
-    results.to_csv(os.path.join(tables_dir, "q1_strong_ignorability_results.csv"), index=False)
+    results.to_csv(os.path.join(output_dir, "q1_strong_ignorability_results.csv"), index=False)
     report_path = write_report(results, output_dir)
     print("Q1 strong ignorability analysis complete.")
     print(f"Rows in results table: {len(results)}")
-    print(f"Tables directory: {tables_dir}")
+    print(f"Output directory: {output_dir}")
     print(f"Report file: {report_path}")
 
 if __name__ == "__main__":

@@ -158,42 +158,52 @@ def mts_bounds_from_manski(
     y_min: float,
     y_max: float,
 ) -> BoundsResult:
-    """Apply a simple MTS tightening (selection monotonicity proxy).
+    """Apply MTS tightening using potential-outcome selection restrictions.
 
-    This implementation follows a practical classroom-friendly proxy:
-    - Starts from Manski bounds.
-    - Uses observed treatment-arm means to tighten only where monotone selection
-      gives directional information.
+    Under MTS, treated units have weakly better potential outcomes:
+    E[Y(t) | D=1] >= E[Y(t) | D=0] for t in {0,1}.
+
+    We start from Manski bounds and tighten the lower bound of E[Y(1)] by using
+    observed arm means as anchors, including the key tightening:
+    y1_lower_mts = p1 * mu1_obs + p0 * mu0_obs.
     """
-    base = manski_bounds(df, treatment_col, outcome_col, y_min, y_max)
-
-    # Compute observed means by treatment arm as a simple empirical anchor.
     work = df[[treatment_col, outcome_col]].dropna(subset=[treatment_col]).copy()
+    if work.empty:
+        raise ValueError(f"No rows available for treatment '{treatment_col}'.")
+
     work[treatment_col] = work[treatment_col].astype(int)
-    mu1_obs = _safe_mean(work.loc[work[treatment_col] == 1, outcome_col])
-    mu0_obs = _safe_mean(work.loc[work[treatment_col] == 0, outcome_col])
+    p1 = float((work[treatment_col] == 1).mean())
+    p0 = 1.0 - p1
 
-    # If one arm is fully missing, return baseline bounds safely.
-    if not np.isfinite(mu1_obs) or not np.isfinite(mu0_obs):
-        return base
+    y_treated = work.loc[work[treatment_col] == 1, outcome_col]
+    y_control = work.loc[work[treatment_col] == 0, outcome_col]
 
-    # Tighten upper/lower softly when treated arm performs weakly better on average.
-    lower = base.ate_lower
-    upper = base.ate_upper
-    if mu1_obs >= mu0_obs:
-        lower = max(lower, mu1_obs - y_max)
-        upper = min(upper, y_max - mu0_obs)
+    mu1_l, mu1_u = _factual_group_bounds(y_treated, y_min, y_max)
+    mu0_l, mu0_u = _factual_group_bounds(y_control, y_min, y_max)
 
-    if lower > upper:
-        lower = upper
+    y1_l = p1 * mu1_l + p0 * y_min
+    y1_u = p1 * mu1_u + p0 * y_max
+    y0_l = p0 * mu0_l + p1 * y_min
+    y0_u = p0 * mu0_u + p1 * y_max
+
+    mu1_obs = _safe_mean(y_treated)
+    mu0_obs = _safe_mean(y_control)
+    if np.isfinite(mu1_obs) and np.isfinite(mu0_obs):
+        # Core MTS tightening requested by the user.
+        y1_l = max(y1_l, p1 * mu1_obs + p0 * mu0_obs)
+
+    ate_l = y1_l - y0_u
+    ate_u = y1_u - y0_l
+    if ate_l > ate_u:
+        ate_l = ate_u
 
     return BoundsResult(
-        ate_lower=float(lower),
-        ate_upper=float(upper),
-        ate_midpoint=float((lower + upper) / 2.0),
-        ate_width=float(upper - lower),
-        p_treated=base.p_treated,
-        n=base.n,
+        ate_lower=float(ate_l),
+        ate_upper=float(ate_u),
+        ate_midpoint=float((ate_l + ate_u) / 2.0),
+        ate_width=float(ate_u - ate_l),
+        p_treated=p1,
+        n=len(work),
     )
 
 def bootstrap_bounds(

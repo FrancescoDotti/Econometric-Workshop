@@ -11,20 +11,20 @@ It also includes a descriptive-analysis script with summary tables and explorato
 ## Recent additions (brief)
 
 - Added high-impact analysis scripts:
-	- `partial_id_q1_high_impact.py`
-	- `partial_id_q2_high_impact.py`
+	- `scripts/partial_id_q1_high_impact.py`
+	- `scripts/partial_id_q2_high_impact.py`
 - High-impact assumption ladder currently uses: **Manski, MTR, MTS** (MIV removed).
 - Added strong-ignorability (exogenous switching) point-estimate scripts:
-	- `q1_strong_ignorability.py`
-	- `q2_strong_ignorability.py`
+	- `scripts/q1_strong_ignorability.py`
+	- `scripts/q2_strong_ignorability.py`
 - Added comparison graph generator:
-	- `compare_partial_vs_strong_graphs.py`
+	- `scripts/compare_partial_vs_strong_graphs.py`
 	- Saves interval-vs-point figures in `outputs_q1_strong_ignorability/figures` and `outputs_q2_strong_ignorability/figures`.
 
 ## Quick run
 
-- `python partial_id_q1_high_impact.py`
-- `python partial_id_q2_high_impact.py`
-- `python q1_strong_ignorability.py`
-- `python q2_strong_ignorability.py`
-- `python compare_partial_vs_strong_graphs.py`
+- `python scripts/partial_id_q1_high_impact.py`
+- `python scripts/partial_id_q2_high_impact.py`
+- `python scripts/q1_strong_ignorability.py`
+- `python scripts/q2_strong_ignorability.py`
+- `python scripts/compare_partial_vs_strong_graphs.py`

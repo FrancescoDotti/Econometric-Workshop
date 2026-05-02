@@ -30,16 +30,13 @@ from advanced_partial_id_core import (
 from exam2026_core import classify_decision, validate_required_columns
 
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
-    """Create output folders and return table/figure directories."""
-    tables_dir = os.path.join(base_output_dir, "tables")
-    figures_dir = os.path.join(base_output_dir, "figures")
-    os.makedirs(tables_dir, exist_ok=True)
-    os.makedirs(figures_dir, exist_ok=True)
-    return tables_dir, figures_dir
+def ensure_output_dir(base_output_dir: str) -> str:
+    """Create output folder if it doesn't exist."""
+    os.makedirs(base_output_dir, exist_ok=True)
+    return base_output_dir
 
 
 def _resolve_miv_col(df: pd.DataFrame) -> str:
@@ -164,11 +161,32 @@ def analyze_q2_high_impact(df: pd.DataFrame, n_boot: int, seed: int) -> pd.DataF
     return pd.DataFrame(rows)
 
 
-def make_q2_high_impact_figures(results: pd.DataFrame, figures_dir: str) -> None:
-    """Create concise visual diagnostics for advanced Q2 results."""
+def make_q2_high_impact_figures(results: pd.DataFrame, output_dir: str) -> None:
+    """Create concise visual diagnostics for advanced Q2 results (solarized theme)."""
     if results.empty:
         return
 
+    # Light Solarized color palette
+    SOLARIZED = {
+        "base03": "#002b36", "base02": "#073642", "base01": "#586e75",
+        "base00": "#657b83", "base0": "#839496", "base1": "#93a1a1",
+        "base2": "#eee8d5", "base3": "#fdf6e3", "yellow": "#b58900",
+        "orange": "#cb4b16", "red": "#dc322f", "magenta": "#d33682",
+        "violet": "#6c71c4", "blue": "#268bd2", "cyan": "#2aa198", "green": "#859900",
+    }
+
+    # Apply light solarized theme
+    plt.rcParams["figure.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.edgecolor"] = SOLARIZED["base1"]
+    plt.rcParams["axes.labelcolor"] = SOLARIZED["base00"]
+    plt.rcParams["text.color"] = SOLARIZED["base00"]
+    plt.rcParams["xtick.color"] = SOLARIZED["base00"]
+    plt.rcParams["ytick.color"] = SOLARIZED["base00"]
+    plt.rcParams["grid.color"] = SOLARIZED["base2"]
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["axes.spines.top"] = False
+    plt.rcParams["axes.spines.right"] = False
     sns.set_theme(style="whitegrid", context="talk")
 
     # Build one interval chart for the baseline support scenario.
@@ -177,29 +195,33 @@ def make_q2_high_impact_figures(results: pd.DataFrame, figures_dir: str) -> None
         base["label"] = base["group"] + " | " + base["outcome"]
         base = base.sort_values(["outcome", "group"]).reset_index(drop=True)
 
-        plt.figure(figsize=(14, 7))
+        plt.figure(figsize=(14, 7), facecolor=SOLARIZED["base3"])
+        ax = plt.gca()
+        ax.set_facecolor(SOLARIZED["base3"])
         for i, row in base.iterrows():
-            plt.hlines(i, row["ate_lower"], row["ate_upper"], color="#5e3c99", linewidth=3.5)
-            plt.plot(row["ate_midpoint"], i, "o", color="black", markersize=6)
-        plt.axvline(0, color="black", linestyle="--", linewidth=1.3)
+            plt.hlines(i, row["ate_lower"], row["ate_upper"], color=SOLARIZED["violet"], linewidth=3.5)
+            plt.plot(row["ate_midpoint"], i, "o", color=SOLARIZED["base01"], markersize=6)
+        plt.axvline(0, color=SOLARIZED["base01"], linestyle="--", linewidth=1.3)
         plt.yticks(range(len(base)), base["label"])
         plt.xlabel("ATE interval (Continue - Opt-out)")
         plt.ylabel("Group | Outcome")
         plt.title("Q2 High-Impact: Baseline Manski intervals across subgroups")
         plt.tight_layout()
-        plt.savefig(os.path.join(figures_dir, "q2_hi_baseline_interval_forest.png"), dpi=180)
+        plt.savefig(os.path.join(output_dir, "q2_hi_baseline_interval_forest.png"), dpi=180)
         plt.close()
 
     # Plot interval widths by assumption to show identifying-power gains.
     width_df = results[results["support_scenario"] == "full_support"].copy()
     if not width_df.empty:
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+        ax = plt.gca()
+        ax.set_facecolor(SOLARIZED["base3"])
         sns.boxplot(
             data=width_df,
             x="assumption",
             y="ate_width",
             hue="assumption",
-            palette="Set2",
+            palette=[SOLARIZED["blue"], SOLARIZED["green"], SOLARIZED["cyan"]],
             dodge=False,
         )
         leg = plt.gca().get_legend()
@@ -209,7 +231,7 @@ def make_q2_high_impact_figures(results: pd.DataFrame, figures_dir: str) -> None
         plt.xlabel("Assumption")
         plt.ylabel("ATE interval width")
         plt.tight_layout()
-        plt.savefig(os.path.join(figures_dir, "q2_hi_width_by_assumption.png"), dpi=180)
+        plt.savefig(os.path.join(output_dir, "q2_hi_width_by_assumption.png"), dpi=180)
         plt.close()
 
 
@@ -268,18 +290,17 @@ def run(args: argparse.Namespace) -> None:
     df["BAP"] = df["BAP"].astype(int)
     df["VAI"] = df["VAI"].astype(int)
 
-    tables_dir, figures_dir = ensure_dirs(output_dir)
+    ensure_output_dir(output_dir)
 
     results = analyze_q2_high_impact(df, n_boot=args.n_boot, seed=args.seed)
-    results.to_csv(os.path.join(tables_dir, "q2_high_impact_bounds.csv"), index=False)
+    results.to_csv(os.path.join(output_dir, "q2_high_impact_bounds.csv"), index=False)
 
-    make_q2_high_impact_figures(results, figures_dir)
+    make_q2_high_impact_figures(results, output_dir)
     report_path = write_q2_high_impact_report(results, output_dir)
 
     print("Q2 high-impact analysis complete.")
     print(f"Rows in advanced bounds table: {len(results)}")
-    print(f"Tables directory: {tables_dir}")
-    print(f"Figures directory: {figures_dir}")
+    print(f"Output directory: {output_dir}")
     print(f"Report file: {report_path}")
 
 

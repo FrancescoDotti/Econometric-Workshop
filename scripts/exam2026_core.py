@@ -192,16 +192,18 @@ def analyze_question_1(df: pd.DataFrame, out_dir: str) -> pd.DataFrame:
 
     rows: List[Dict[str, float]] = []
     for k in range(1, max_k + 1):
-        # Build threshold-based treatment indicator.
-        bap["Zk"] = (bap["Tut_20161"] >= k).astype(int)
+        # Build threshold-based treatment indicator on a copy to avoid
+        # in-place mutation that downstream functions would see incorrectly.
+        bap_k = bap.copy()
+        bap_k["Zk"] = (bap_k["Tut_20161"] >= k).astype(int)
 
         # Skip thresholds that do not create treated/control variation.
-        if bap["Zk"].nunique() < 2:
+        if bap_k["Zk"].nunique() < 2:
             continue
 
         # Compute bounds for average grade.
         grade = partial_id_ate_bounds(
-            bap,
+            bap_k,
             treatment_col="Zk",
             outcome_col="Prom__20161",
             y_min=1.0,
@@ -210,7 +212,7 @@ def analyze_question_1(df: pd.DataFrame, out_dir: str) -> pd.DataFrame:
 
         # Compute bounds for pass-rate outcome.
         passrate = partial_id_ate_bounds(
-            bap,
+            bap_k,
             treatment_col="Zk",
             outcome_col="Tasa_aprob_20161",
             y_min=0.0,
@@ -234,10 +236,6 @@ def analyze_question_1(df: pd.DataFrame, out_dir: str) -> pd.DataFrame:
             "pass_obs_diff": passrate.obs_diff,
         }
 
-        # Normalize grade midpoint to [0,1]-like scale and average with pass midpoint.
-        row["joint_midpoint_score"] = (
-            (row["grade_ate_midpoint"] / 6.0) + row["pass_ate_midpoint"]
-        ) / 2.0
         rows.append(row)
 
     # Save full threshold-by-threshold table.
@@ -254,12 +252,20 @@ def analyze_question_1(df: pd.DataFrame, out_dir: str) -> pd.DataFrame:
             ("pass_conservative_k", "pass_ate_lower", "max"),
             ("pass_optimistic_k", "pass_ate_upper", "max"),
             ("pass_midpoint_k", "pass_ate_midpoint", "max"),
-            ("joint_midpoint_k", "joint_midpoint_score", "max"),
         ]:
             idx = q1[col].idxmax() if mode == "max" else q1[col].idxmin()
             rec = q1.loc[idx].to_dict()
             rec["selection_rule"] = name
             summary_rows.append(rec)
+
+        # Always include the program's official active-engagement threshold (k=10)
+        # regardless of which selection rule picks it.
+        OPERATIONAL_K = 10
+        k10_rows = q1[q1["k"] == OPERATIONAL_K]
+        if not k10_rows.empty:
+            k10_row = k10_rows.iloc[0].to_dict()
+            k10_row["selection_rule"] = "operational_k10"
+            summary_rows.append(k10_row)
 
         pd.DataFrame(summary_rows).to_csv(
             os.path.join(out_dir, "q1_recommended_k.csv"),
@@ -285,11 +291,42 @@ def analyze_question_2(df: pd.DataFrame, out_dir: str) -> pd.DataFrame:
 
     out_rows: List[Dict[str, float]] = []
     for gname, gdf in groups.items():
+        # If treatment has no within-group variation, ATE is not identified.
+        has_variation = gdf["Continue2"].nunique() >= 2
+
         # For each subgroup, evaluate both grade and pass-rate outcomes.
         for outcome, ymin, ymax in [
             ("Prom__20162", 1.0, 7.0),
             ("Tasa_aprob_20162", 0.0, 1.0),
         ]:
+            if not has_variation:
+                row = {
+                    "group": gname,
+                    "outcome": outcome,
+                    "n": int(len(gdf)),
+                    "n_treated": int((gdf["Continue2"] == 1).sum()),
+                    "n_control": int((gdf["Continue2"] == 0).sum()),
+                    "p_treated": float(gdf["Continue2"].mean()) if len(gdf) > 0 else np.nan,
+                    "treated_obs_rate": np.nan,
+                    "control_obs_rate": np.nan,
+                    "obs_mean_treated": np.nan,
+                    "obs_mean_control": np.nan,
+                    "obs_diff_treated_minus_control": np.nan,
+                    "y1_lower": np.nan,
+                    "y1_upper": np.nan,
+                    "y0_lower": np.nan,
+                    "y0_upper": np.nan,
+                    "ate_lower": np.nan,
+                    "ate_upper": np.nan,
+                    "ate_midpoint": np.nan,
+                    "ate_width": np.nan,
+                    "robust_sign": "Not identified (no treatment variation)",
+                    "optimistic_choice": "no_variation",
+                    "conservative_choice": "no_variation",
+                }
+                out_rows.append(row)
+                continue
+
             res = partial_id_ate_bounds(
                 gdf,
                 treatment_col="Continue2",

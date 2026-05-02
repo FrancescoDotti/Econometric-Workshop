@@ -23,22 +23,19 @@ from exam2026_core import analyze_question_2, validate_required_columns
 
 
 # Base directory for this project (Econometric Workshop folder).
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
-    """Create output subfolders and return table/figure paths."""
-    tables_dir = os.path.join(base_output_dir, "tables")
-    figures_dir = os.path.join(base_output_dir, "figures")
-    os.makedirs(tables_dir, exist_ok=True)
-    os.makedirs(figures_dir, exist_ok=True)
-    return tables_dir, figures_dir
+def ensure_output_dir(base_output_dir: str) -> str:
+    """Create output folder if it doesn't exist."""
+    os.makedirs(base_output_dir, exist_ok=True)
+    return base_output_dir
 
 
-def save_q2_tables(q2: pd.DataFrame, tables_dir: str) -> None:
+def save_q2_tables(q2: pd.DataFrame, output_dir: str) -> None:
     """Save detailed and summary tables for Question 2 decisions."""
     # Save complete bounds table.
-    q2.to_csv(os.path.join(tables_dir, "q2_continue_vs_optout_bounds.csv"), index=False)
+    q2.to_csv(os.path.join(output_dir, "q2_continue_vs_optout_bounds.csv"), index=False)
 
     # Save a compact decision-focused summary table.
     decision_cols = [
@@ -52,17 +49,37 @@ def save_q2_tables(q2: pd.DataFrame, tables_dir: str) -> None:
         "conservative_choice",
     ]
     q2[decision_cols].to_csv(
-        os.path.join(tables_dir, "q2_decision_summary.csv"),
+        os.path.join(output_dir, "q2_decision_summary.csv"),
         index=False,
     )
 
 
-def make_q2_graph(q2: pd.DataFrame, figures_dir: str) -> None:
-    """Create interval plot to compare Continue vs Opt-out by group/outcome."""
+def make_q2_graph(q2: pd.DataFrame, output_dir: str) -> None:
+    """Create interval plot to compare Continue vs Opt-out by group/outcome (solarized theme)."""
     if q2.empty:
         return
 
-    # Use clean style and vivid colors for readability.
+    # Light Solarized color palette
+    SOLARIZED = {
+        "base03": "#002b36", "base02": "#073642", "base01": "#586e75",
+        "base00": "#657b83", "base0": "#839496", "base1": "#93a1a1",
+        "base2": "#eee8d5", "base3": "#fdf6e3", "yellow": "#b58900",
+        "orange": "#cb4b16", "red": "#dc322f", "magenta": "#d33682",
+        "violet": "#6c71c4", "blue": "#268bd2", "cyan": "#2aa198", "green": "#859900",
+    }
+
+    # Apply light solarized theme
+    plt.rcParams["figure.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.edgecolor"] = SOLARIZED["base1"]
+    plt.rcParams["axes.labelcolor"] = SOLARIZED["base00"]
+    plt.rcParams["text.color"] = SOLARIZED["base00"]
+    plt.rcParams["xtick.color"] = SOLARIZED["base00"]
+    plt.rcParams["ytick.color"] = SOLARIZED["base00"]
+    plt.rcParams["grid.color"] = SOLARIZED["base2"]
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["axes.spines.top"] = False
+    plt.rcParams["axes.spines.right"] = False
     sns.set_theme(style="whitegrid", context="talk")
 
     # Build display label to put group and outcome on one axis.
@@ -70,23 +87,30 @@ def make_q2_graph(q2: pd.DataFrame, figures_dir: str) -> None:
     plot_df["label"] = plot_df["group"] + " | " + plot_df["outcome"]
     plot_df = plot_df.sort_values(["group", "outcome"]).reset_index(drop=True)
 
-    plt.figure(figsize=(13, 6))
+    plt.figure(figsize=(13, 6), facecolor=SOLARIZED["base3"])
+    ax = plt.gca()
+    ax.set_facecolor(SOLARIZED["base3"])
 
-    # Draw each ATE interval and its midpoint as a point.
+    # Draw each ATE interval and its midpoint as a point (solarized colors).
     for i, row in plot_df.iterrows():
-        color = "#1b9e77" if row["ate_lower"] > 0 else "#d95f02" if row["ate_upper"] < 0 else "#7570b3"
+        if row["ate_lower"] > 0:
+            color = SOLARIZED["green"]
+        elif row["ate_upper"] < 0:
+            color = SOLARIZED["orange"]
+        else:
+            color = SOLARIZED["violet"]
         plt.hlines(i, row["ate_lower"], row["ate_upper"], color=color, linewidth=4)
-        plt.plot(row["ate_midpoint"], i, "o", color="black", markersize=7)
+        plt.plot(row["ate_midpoint"], i, "o", color=SOLARIZED["base01"], markersize=7)
 
     # Vertical zero line helps interpret beneficial vs harmful ranges.
-    plt.axvline(0, color="black", linestyle="--", linewidth=1.5)
+    plt.axvline(0, color=SOLARIZED["base01"], linestyle="--", linewidth=1.5)
 
     plt.yticks(range(len(plot_df)), plot_df["label"])
     plt.xlabel("ATE interval (Continue - Opt-out)")
     plt.ylabel("Group | Outcome")
     plt.title("Q2: Partial-ID ATE Intervals for Continue vs Opt-out")
     plt.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q2_continue_vs_optout_intervals.png"), dpi=180)
+    plt.savefig(os.path.join(output_dir, "q2_continue_vs_optout_intervals.png"), dpi=180)
     plt.close()
 
 
@@ -124,8 +148,8 @@ def write_q2_report(q2: pd.DataFrame, output_dir: str) -> str:
         f.write("\n")
 
         f.write("## Files Generated\n")
-        f.write("- Tables: `tables/q2_continue_vs_optout_bounds.csv`, `tables/q2_decision_summary.csv`\n")
-        f.write("- Figure: `figures/q2_continue_vs_optout_intervals.png`\n")
+        f.write("- Tables: `q2_continue_vs_optout_bounds.csv`, `q2_decision_summary.csv`\n")
+        f.write("- Figure: `q2_continue_vs_optout_intervals.png`\n")
 
     return report_path
 
@@ -167,15 +191,15 @@ def run(args: argparse.Namespace) -> None:
     df["BAP"] = df["BAP"].astype(int)
     df["VAI"] = df["VAI"].astype(int)
 
-    # Create output folders.
-    tables_dir, figures_dir = ensure_dirs(output_dir)
+    # Create output directory.
+    ensure_output_dir(output_dir)
 
     # Run Question 2 partial-ID comparison using the shared core formulas.
-    q2 = analyze_question_2(df, tables_dir)
+    q2 = analyze_question_2(df, output_dir)
 
     # Save final tables and interval visualization.
-    save_q2_tables(q2, tables_dir)
-    make_q2_graph(q2, figures_dir)
+    save_q2_tables(q2, output_dir)
+    make_q2_graph(q2, output_dir)
 
     # Write a plain-language markdown summary for fast interpretation.
     report_path = write_q2_report(q2, output_dir)
@@ -183,8 +207,7 @@ def run(args: argparse.Namespace) -> None:
     # Print execution summary for the user.
     print("Q2 partial-identification analysis complete.")
     print(f"Rows analyzed in Q2 summary: {len(q2)}")
-    print(f"Tables directory: {tables_dir}")
-    print(f"Figures directory: {figures_dir}")
+    print(f"Output directory: {output_dir}")
     print(f"Report file: {report_path}")
 
 

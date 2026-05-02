@@ -30,16 +30,13 @@ from advanced_partial_id_core import (
 from exam2026_core import validate_required_columns
 
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
-    """Create output folders and return table/figure directories."""
-    tables_dir = os.path.join(base_output_dir, "tables")
-    figures_dir = os.path.join(base_output_dir, "figures")
-    os.makedirs(tables_dir, exist_ok=True)
-    os.makedirs(figures_dir, exist_ok=True)
-    return tables_dir, figures_dir
+def ensure_output_dir(base_output_dir: str) -> str:
+    """Create output folder if it doesn't exist."""
+    os.makedirs(base_output_dir, exist_ok=True)
+    return base_output_dir
 
 
 def _get_support_scenarios(df: pd.DataFrame, outcome: str) -> Dict[str, tuple[float, float]]:
@@ -99,12 +96,14 @@ def analyze_q1_high_impact(df: pd.DataFrame, n_boot: int, seed: int) -> tuple[pd
 
     # Scan all thresholds k and evaluate all assumptions + support scenarios.
     for k in range(1, max_k + 1):
-        bap["Zk"] = (bap["Tut_20161"] >= k).astype(int)
-        if bap["Zk"].nunique() < 2:
+        # Use a copy to avoid in-place mutation that bootstrap_bounds would see incorrectly.
+        bap_k = bap.copy()
+        bap_k["Zk"] = (bap_k["Tut_20161"] >= k).astype(int)
+        if bap_k["Zk"].nunique() < 2:
             continue
 
         for outcome in ["Prom__20161", "Tasa_aprob_20161"]:
-            support_cases = _get_support_scenarios(bap, outcome)
+            support_cases = _get_support_scenarios(bap_k, outcome)
 
             for support_name, (y_min, y_max) in support_cases.items():
                 estimators = _build_assumption_estimators(
@@ -116,11 +115,11 @@ def analyze_q1_high_impact(df: pd.DataFrame, n_boot: int, seed: int) -> tuple[pd
 
                 for assumption, estimator in estimators.items():
                     try:
-                        res = estimator(bap)
+                        res = estimator(bap_k)
                     except Exception:
                         continue
 
-                    boot = bootstrap_bounds(bap, estimator, n_boot=n_boot, seed=seed + k)
+                    boot = bootstrap_bounds(bap_k, estimator, n_boot=n_boot, seed=seed + k)
 
                     rows.append(
                         {
@@ -177,7 +176,9 @@ def analyze_q1_high_impact(df: pd.DataFrame, n_boot: int, seed: int) -> tuple[pd
                     best_score = res.ate_midpoint
                     best_k = k
 
-            if best_k is not None:
+            # Guard against best_k not being in counts (can happen if a bootstrap
+            # sample has no variation for some k values).
+            if best_k is not None and int(best_k) in counts:
                 counts[int(best_k)] += 1
 
         for k, count in counts.items():
@@ -194,45 +195,73 @@ def analyze_q1_high_impact(df: pd.DataFrame, n_boot: int, seed: int) -> tuple[pd
     return main, stability
 
 
-def make_q1_high_impact_figures(main: pd.DataFrame, stability: pd.DataFrame, figures_dir: str) -> None:
-    """Create compact visual summaries for the advanced Q1 outputs."""
+def make_q1_high_impact_figures(main: pd.DataFrame, stability: pd.DataFrame, output_dir: str) -> None:
+    """Create compact visual summaries for the advanced Q1 outputs (solarized theme)."""
     if main.empty:
         return
 
+    # Light Solarized color palette
+    SOLARIZED = {
+        "base03": "#002b36", "base02": "#073642", "base01": "#586e75",
+        "base00": "#657b83", "base0": "#839496", "base1": "#93a1a1",
+        "base2": "#eee8d5", "base3": "#fdf6e3", "yellow": "#b58900",
+        "orange": "#cb4b16", "red": "#dc322f", "magenta": "#d33682",
+        "violet": "#6c71c4", "blue": "#268bd2", "cyan": "#2aa198", "green": "#859900",
+    }
+
+    # Apply light solarized theme
+    plt.rcParams["figure.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.edgecolor"] = SOLARIZED["base1"]
+    plt.rcParams["axes.labelcolor"] = SOLARIZED["base00"]
+    plt.rcParams["text.color"] = SOLARIZED["base00"]
+    plt.rcParams["xtick.color"] = SOLARIZED["base00"]
+    plt.rcParams["ytick.color"] = SOLARIZED["base00"]
+    plt.rcParams["grid.color"] = SOLARIZED["base2"]
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["axes.spines.top"] = False
+    plt.rcParams["axes.spines.right"] = False
     sns.set_theme(style="whitegrid", context="talk")
+    sns.set_palette([SOLARIZED["blue"], SOLARIZED["green"], SOLARIZED["cyan"], SOLARIZED["violet"]])
 
     # Plot assumption ladder for grade midpoint under full support.
     grade = main[(main["outcome"] == "Prom__20161") & (main["support_scenario"] == "full_support")]
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+    ax = plt.gca()
+    ax.set_facecolor(SOLARIZED["base3"])
     sns.lineplot(data=grade, x="k", y="ate_midpoint", hue="assumption", linewidth=2.2)
-    plt.axhline(0, color="black", linestyle="--", linewidth=1.2)
+    plt.axhline(0, color=SOLARIZED["base01"], linestyle="--", linewidth=1.2)
     plt.title("Q1 High-Impact: Grade midpoint ATE by assumption")
     plt.xlabel("Threshold k")
     plt.ylabel("ATE midpoint")
     plt.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q1_hi_grade_midpoint_assumption_ladder.png"), dpi=180)
+    plt.savefig(os.path.join(output_dir, "q1_hi_grade_midpoint_assumption_ladder.png"), dpi=180)
     plt.close()
 
     # Plot uncertainty width by assumption for pass-rate outcome.
     pass_df = main[(main["outcome"] == "Tasa_aprob_20161") & (main["support_scenario"] == "full_support")]
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+    ax = plt.gca()
+    ax.set_facecolor(SOLARIZED["base3"])
     sns.lineplot(data=pass_df, x="k", y="ate_width", hue="assumption", linewidth=2.2)
     plt.title("Q1 High-Impact: Pass-rate interval width by assumption")
     plt.xlabel("Threshold k")
     plt.ylabel("ATE interval width")
     plt.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q1_hi_pass_width_assumption_ladder.png"), dpi=180)
+    plt.savefig(os.path.join(output_dir, "q1_hi_pass_width_assumption_ladder.png"), dpi=180)
     plt.close()
 
     # Plot threshold stability frequencies if available.
     if not stability.empty:
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+        ax = plt.gca()
+        ax.set_facecolor(SOLARIZED["base3"])
         sns.lineplot(data=stability, x="k", y="selection_freq", hue="outcome", marker="o")
         plt.title("Q1 High-Impact: Bootstrap stability of selected threshold k")
         plt.xlabel("Threshold k")
         plt.ylabel("Selection frequency")
         plt.tight_layout()
-        plt.savefig(os.path.join(figures_dir, "q1_hi_threshold_stability.png"), dpi=180)
+        plt.savefig(os.path.join(output_dir, "q1_hi_threshold_stability.png"), dpi=180)
         plt.close()
 
 
@@ -299,21 +328,20 @@ def run(args: argparse.Namespace) -> None:
     df["BAP"] = df["BAP"].astype(int)
     df["VAI"] = df["VAI"].astype(int)
 
-    tables_dir, figures_dir = ensure_dirs(output_dir)
+    ensure_output_dir(output_dir)
 
     main, stability = analyze_q1_high_impact(df, n_boot=args.n_boot, seed=args.seed)
 
-    main.to_csv(os.path.join(tables_dir, "q1_high_impact_bounds.csv"), index=False)
-    stability.to_csv(os.path.join(tables_dir, "q1_high_impact_threshold_stability.csv"), index=False)
+    main.to_csv(os.path.join(output_dir, "q1_high_impact_bounds.csv"), index=False)
+    stability.to_csv(os.path.join(output_dir, "q1_high_impact_threshold_stability.csv"), index=False)
 
-    make_q1_high_impact_figures(main, stability, figures_dir)
+    make_q1_high_impact_figures(main, stability, output_dir)
     report_path = write_q1_high_impact_report(main, stability, output_dir)
 
     print("Q1 high-impact analysis complete.")
     print(f"Rows in advanced bounds table: {len(main)}")
     print(f"Rows in stability table: {len(stability)}")
-    print(f"Tables directory: {tables_dir}")
-    print(f"Figures directory: {figures_dir}")
+    print(f"Output directory: {output_dir}")
     print(f"Report file: {report_path}")
 
 

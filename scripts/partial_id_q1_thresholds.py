@@ -23,22 +23,19 @@ from exam2026_core import analyze_question_1, validate_required_columns
 
 
 # Base directory for this project (Econometric Workshop folder).
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def ensure_dirs(base_output_dir: str) -> tuple[str, str]:
-    """Create output subfolders for tables and figures."""
-    tables_dir = os.path.join(base_output_dir, "tables")
-    figures_dir = os.path.join(base_output_dir, "figures")
-    os.makedirs(tables_dir, exist_ok=True)
-    os.makedirs(figures_dir, exist_ok=True)
-    return tables_dir, figures_dir
+def ensure_output_dir(base_output_dir: str) -> str:
+    """Create output folder if it doesn't exist."""
+    os.makedirs(base_output_dir, exist_ok=True)
+    return base_output_dir
 
 
-def save_q1_tables(q1: pd.DataFrame, tables_dir: str) -> None:
+def save_q1_tables(q1: pd.DataFrame, output_dir: str) -> None:
     """Save key tables used to interpret threshold effects."""
     # Save the complete threshold-by-threshold bounds table.
-    q1.to_csv(os.path.join(tables_dir, "q1_threshold_bounds.csv"), index=False)
+    q1.to_csv(os.path.join(output_dir, "q1_threshold_bounds.csv"), index=False)
 
     # Build a small recommendation table for quick policy reading.
     if q1.empty:
@@ -51,7 +48,6 @@ def save_q1_tables(q1: pd.DataFrame, tables_dir: str) -> None:
         ("pass_conservative_k", "pass_ate_lower", "max"),
         ("pass_optimistic_k", "pass_ate_upper", "max"),
         ("pass_midpoint_k", "pass_ate_midpoint", "max"),
-        ("joint_midpoint_k", "joint_midpoint_score", "max"),
     ]
 
     summary_rows = []
@@ -62,92 +58,134 @@ def save_q1_tables(q1: pd.DataFrame, tables_dir: str) -> None:
         row["selection_rule"] = rule_name
         summary_rows.append(row)
 
+    # Always include the program's official active-engagement threshold (k=10)
+    # regardless of which selection rule picks it.
+    OPERATIONAL_K = 10
+    k10_rows = q1[q1["k"] == OPERATIONAL_K]
+    if not k10_rows.empty:
+        k10_row = k10_rows.iloc[0].to_dict()
+        k10_row["selection_rule"] = "operational_k10"
+        summary_rows.append(k10_row)
+
     pd.DataFrame(summary_rows).to_csv(
-        os.path.join(tables_dir, "q1_recommended_k.csv"),
+        os.path.join(output_dir, "q1_recommended_k.csv"),
         index=False,
     )
 
 
-def make_q1_graphs(q1: pd.DataFrame, figures_dir: str) -> None:
-    """Create colorful figures to show how k changes partial-ID outputs."""
+def make_q1_graphs(q1: pd.DataFrame, output_dir: str) -> None:
+    """Create solarized figures to show how k changes partial-ID outputs."""
     if q1.empty:
         return
 
-    # Use a vivid style so curves and intervals are easy to distinguish.
+    # Light Solarized color palette
+    SOLARIZED = {
+        "base03": "#002b36", "base02": "#073642", "base01": "#586e75",
+        "base00": "#657b83", "base0": "#839496", "base1": "#93a1a1",
+        "base2": "#eee8d5", "base3": "#fdf6e3", "yellow": "#b58900",
+        "orange": "#cb4b16", "red": "#dc322f", "magenta": "#d33682",
+        "violet": "#6c71c4", "blue": "#268bd2", "cyan": "#2aa198", "green": "#859900",
+    }
+
+    # Apply light solarized theme
+    plt.rcParams["figure.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.facecolor"] = SOLARIZED["base3"]
+    plt.rcParams["axes.edgecolor"] = SOLARIZED["base1"]
+    plt.rcParams["axes.labelcolor"] = SOLARIZED["base00"]
+    plt.rcParams["text.color"] = SOLARIZED["base00"]
+    plt.rcParams["xtick.color"] = SOLARIZED["base00"]
+    plt.rcParams["ytick.color"] = SOLARIZED["base00"]
+    plt.rcParams["grid.color"] = SOLARIZED["base2"]
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["axes.spines.top"] = False
+    plt.rcParams["axes.spines.right"] = False
     sns.set_theme(style="whitegrid", context="talk")
 
     # 1) Grade ATE interval and midpoint across k.
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+    ax = plt.gca()
+    ax.set_facecolor(SOLARIZED["base3"])
     plt.fill_between(
         q1["k"],
         q1["grade_ate_lower"],
         q1["grade_ate_upper"],
-        color="#66c2a5",
+        color=SOLARIZED["cyan"],
         alpha=0.25,
         label="Grade ATE bounds",
     )
-    sns.lineplot(data=q1, x="k", y="grade_ate_midpoint", color="#1b9e77", linewidth=2.5)
-    plt.axhline(0, color="black", linestyle="--", linewidth=1.2)
+    sns.lineplot(data=q1, x="k", y="grade_ate_midpoint", color=SOLARIZED["blue"], linewidth=2.5)
+    plt.axhline(0, color=SOLARIZED["base01"], linestyle="--", linewidth=1.2)
     plt.title("Q1: Grade Effect Bounds vs Tutoring Threshold k")
     plt.xlabel("Threshold k")
     plt.ylabel("ATE on Prom__20161")
     plt.legend(loc="best")
     plt.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q1_grade_bounds_vs_k.png"), dpi=180)
+    plt.savefig(os.path.join(output_dir, "q1_grade_bounds_vs_k.png"), dpi=180)
     plt.close()
 
     # 2) Approval-rate ATE interval and midpoint across k.
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+    ax = plt.gca()
+    ax.set_facecolor(SOLARIZED["base3"])
     plt.fill_between(
         q1["k"],
         q1["pass_ate_lower"],
         q1["pass_ate_upper"],
-        color="#fc8d62",
+        color=SOLARIZED["orange"],
         alpha=0.25,
         label="Pass-rate ATE bounds",
     )
-    sns.lineplot(data=q1, x="k", y="pass_ate_midpoint", color="#d95f02", linewidth=2.5)
-    plt.axhline(0, color="black", linestyle="--", linewidth=1.2)
+    sns.lineplot(data=q1, x="k", y="pass_ate_midpoint", color=SOLARIZED["magenta"], linewidth=2.5)
+    plt.axhline(0, color=SOLARIZED["base01"], linestyle="--", linewidth=1.2)
     plt.title("Q1: Approval-Rate Effect Bounds vs Tutoring Threshold k")
     plt.xlabel("Threshold k")
     plt.ylabel("ATE on Tasa_aprob_20161")
     plt.legend(loc="best")
     plt.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q1_passrate_bounds_vs_k.png"), dpi=180)
+    plt.savefig(os.path.join(output_dir, "q1_passrate_bounds_vs_k.png"), dpi=180)
     plt.close()
 
     # 3) Treatment share and uncertainty widths across k.
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-    sns.lineplot(data=q1, x="k", y="treated_share", color="#7570b3", linewidth=2.5, ax=ax1)
+    fig, ax1 = plt.subplots(figsize=(12, 6), facecolor=SOLARIZED["base3"])
+    ax1.set_facecolor(SOLARIZED["base3"])
+    sns.lineplot(data=q1, x="k", y="treated_share", color=SOLARIZED["violet"], linewidth=2.5, ax=ax1)
     ax1.set_xlabel("Threshold k")
-    ax1.set_ylabel("Share with Z_k = 1", color="#7570b3")
-    ax1.tick_params(axis="y", labelcolor="#7570b3")
+    ax1.set_ylabel("Share with Z_k = 1", color=SOLARIZED["violet"])
+    ax1.tick_params(axis="y", labelcolor=SOLARIZED["violet"])
 
     # Add a second axis to visualize how interval width changes with k.
     ax2 = ax1.twinx()
-    sns.lineplot(data=q1, x="k", y="grade_ate_width", color="#e7298a", linewidth=2, ax=ax2)
-    sns.lineplot(data=q1, x="k", y="pass_ate_width", color="#66a61e", linewidth=2, ax=ax2)
-    ax2.set_ylabel("ATE interval width", color="#444444")
+    sns.lineplot(data=q1, x="k", y="grade_ate_width", color=SOLARIZED["red"], linewidth=2, ax=ax2)
+    sns.lineplot(data=q1, x="k", y="pass_ate_width", color=SOLARIZED["green"], linewidth=2, ax=ax2)
+    ax2.set_ylabel("ATE interval width", color=SOLARIZED["base00"])
 
     ax1.set_title("Q1: Composition (treated share) and Uncertainty (interval width) vs k")
     fig.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q1_share_and_uncertainty_vs_k.png"), dpi=180)
+    plt.savefig(os.path.join(output_dir, "q1_share_and_uncertainty_vs_k.png"), dpi=180)
     plt.close(fig)
 
     # 4) Heatmap to compare midpoint effects jointly across k.
+    from matplotlib.colors import LinearSegmentedColormap
     heat = q1[["k", "grade_ate_midpoint", "pass_ate_midpoint"]].set_index("k").T
 
+    # Use solarized colormap for heatmap
+    solarized_cmap = LinearSegmentedColormap.from_list(
+        "solarized",
+        [SOLARIZED["blue"], SOLARIZED["base3"], SOLARIZED["orange"]],
+    )
+
     # Use a wider canvas and disable dense annotations to avoid unreadable overlap.
-    plt.figure(figsize=(16, 4.8))
+    plt.figure(figsize=(16, 4.8), facecolor=SOLARIZED["base3"])
     ax = sns.heatmap(
         heat,
-        cmap="RdYlGn",
+        cmap=solarized_cmap,
         center=0,
         annot=False,
-        cbar_kws={"label": "ATE midpoint"},
+        cbar_kws={"label": "ATE midpoint", "shrink": 0.8},
         linewidths=0.25,
-        linecolor="white",
+        linecolor=SOLARIZED["base2"],
     )
+    ax.set_facecolor(SOLARIZED["base3"])
 
     # Show fewer x labels so threshold ticks remain legible.
     all_k = heat.columns.tolist()
@@ -164,7 +202,7 @@ def make_q1_graphs(q1: pd.DataFrame, figures_dir: str) -> None:
     plt.xlabel("Threshold k")
     plt.ylabel("Outcome")
     plt.tight_layout()
-    plt.savefig(os.path.join(figures_dir, "q1_midpoint_heatmap_vs_k.png"), dpi=200)
+    plt.savefig(os.path.join(output_dir, "q1_midpoint_heatmap_vs_k.png"), dpi=200)
     plt.close()
 
 
@@ -193,15 +231,12 @@ def write_q1_report(q1: pd.DataFrame, output_dir: str) -> str:
         # Compute key k values under common decision summaries.
         k_grade_mid = int(q1.loc[q1["grade_ate_midpoint"].idxmax(), "k"])
         k_pass_mid = int(q1.loc[q1["pass_ate_midpoint"].idxmax(), "k"])
-        k_joint_mid = int(q1.loc[q1["joint_midpoint_score"].idxmax(), "k"])
-
         robust_grade = int((q1["grade_ate_lower"] > 0).sum())
         robust_pass = int((q1["pass_ate_lower"] > 0).sum())
 
         f.write("## Main Findings\n")
         f.write(f"- Best grade midpoint threshold: **k = {k_grade_mid}**\n")
         f.write(f"- Best pass-rate midpoint threshold: **k = {k_pass_mid}**\n")
-        f.write(f"- Best joint midpoint threshold: **k = {k_joint_mid}**\n")
         f.write(
             f"- Thresholds with robust positive grade effect (`grade_ate_lower > 0`): **{robust_grade}**\n"
         )
@@ -210,10 +245,10 @@ def write_q1_report(q1: pd.DataFrame, output_dir: str) -> str:
         )
 
         f.write("## Files Generated\n")
-        f.write("- Tables: `tables/q1_threshold_bounds.csv`, `tables/q1_recommended_k.csv`\n")
+        f.write("- Tables: `q1_threshold_bounds.csv`, `q1_recommended_k.csv`\n")
         f.write(
-            "- Figures: `figures/q1_grade_bounds_vs_k.png`, `figures/q1_passrate_bounds_vs_k.png`, "
-            "`figures/q1_share_and_uncertainty_vs_k.png`, `figures/q1_midpoint_heatmap_vs_k.png`\n"
+            "- Figures: `q1_grade_bounds_vs_k.png`, `q1_passrate_bounds_vs_k.png`, "
+            "`q1_share_and_uncertainty_vs_k.png`, `q1_midpoint_heatmap_vs_k.png`\n"
         )
 
     return report_path
@@ -256,15 +291,15 @@ def run(args: argparse.Namespace) -> None:
     df["BAP"] = df["BAP"].astype(int)
     df["VAI"] = df["VAI"].astype(int)
 
-    # Create clean folder structure for outputs.
-    tables_dir, figures_dir = ensure_dirs(output_dir)
+    # Create output directory.
+    ensure_output_dir(output_dir)
 
     # Run the partial-identification threshold analysis for Question 1.
-    q1 = analyze_question_1(df, tables_dir)
+    q1 = analyze_question_1(df, output_dir)
 
     # Save standardized tables and graphs for interpretation.
-    save_q1_tables(q1, tables_dir)
-    make_q1_graphs(q1, figures_dir)
+    save_q1_tables(q1, output_dir)
+    make_q1_graphs(q1, output_dir)
 
     # Write a plain-language markdown summary for quick interpretation.
     report_path = write_q1_report(q1, output_dir)
@@ -272,8 +307,7 @@ def run(args: argparse.Namespace) -> None:
     # Print summary so the user can verify successful execution.
     print("Q1 partial-identification analysis complete.")
     print(f"Thresholds evaluated: {len(q1)}")
-    print(f"Tables directory: {tables_dir}")
-    print(f"Figures directory: {figures_dir}")
+    print(f"Output directory: {output_dir}")
     print(f"Report file: {report_path}")
 
 
