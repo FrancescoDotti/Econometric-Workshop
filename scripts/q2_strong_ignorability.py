@@ -6,11 +6,46 @@ This script answers Q2 using point estimates (difference in means) as if treatme
 
 import argparse
 import os
+import numpy as np
 import pandas as pd
 
 from exam2026_core import validate_required_columns
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _ols_predict(X_fit: np.ndarray, y_fit: np.ndarray, X_pred: np.ndarray) -> np.ndarray:
+    beta, *_ = np.linalg.lstsq(X_fit, y_fit, rcond=None)
+    return X_pred @ beta
+
+
+def conditional_ate(
+    sub: pd.DataFrame,
+    treatment_col: str,
+    outcome_col: str,
+    covariates: list,
+) -> float:
+    """Conditional strong-ignorability ATE via g-computation (outcome regression).
+
+    Fits separate linear models on treated and control rows with observed outcome, then
+    averages mu_1(X) - mu_0(X) over the subgroup with non-missing covariates.
+    """
+    needed = sub[[treatment_col, outcome_col] + covariates].copy()
+    needed = needed.dropna(subset=[treatment_col] + covariates)
+    if needed.empty:
+        return float("nan")
+    X_all = np.column_stack([np.ones(len(needed)), needed[covariates].to_numpy(dtype=float)])
+    treated_obs = needed[(needed[treatment_col] == 1) & needed[outcome_col].notna()]
+    control_obs = needed[(needed[treatment_col] == 0) & needed[outcome_col].notna()]
+    if len(treated_obs) <= len(covariates) + 1 or len(control_obs) <= len(covariates) + 1:
+        return float("nan")
+    X_t = np.column_stack([np.ones(len(treated_obs)), treated_obs[covariates].to_numpy(dtype=float)])
+    X_c = np.column_stack([np.ones(len(control_obs)), control_obs[covariates].to_numpy(dtype=float)])
+    y_t = treated_obs[outcome_col].to_numpy(dtype=float)
+    y_c = control_obs[outcome_col].to_numpy(dtype=float)
+    mu1 = _ols_predict(X_t, y_t, X_all)
+    mu0 = _ols_predict(X_c, y_c, X_all)
+    return float(np.mean(mu1 - mu0))
 
 
 def ensure_output_dir(base_output_dir: str) -> str:
@@ -23,10 +58,12 @@ def analyze_q2_strong_ignorability(df: pd.DataFrame) -> pd.DataFrame:
     work = df.copy()
     work["Continue2"] = (work["Tut_20162"].fillna(0) >= 1).astype(int)
     rows = []
-    for group_name, gdf in {
-        "BAP_students": work[work["BAP"] == 1],
-        "VAI_students": work[work["VAI"] == 1],
-    }.items():
+    # Within the BAP group VAI varies, and vice versa: include the other indicator as a covariate.
+    groups = {
+        "BAP_students": (work[work["BAP"] == 1], ["PTJE_RANKING", "PTJE_LYC", "PTJE_MAT", "VAI"]),
+        "VAI_students": (work[work["VAI"] == 1], ["PTJE_RANKING", "PTJE_LYC", "PTJE_MAT", "BAP"]),
+    }
+    for group_name, (gdf, covariates) in groups.items():
         gdf = gdf.dropna(subset=["Continue2"]).copy()
         if gdf.empty or gdf["Continue2"].nunique() < 2:
             continue
@@ -36,12 +73,15 @@ def analyze_q2_strong_ignorability(df: pd.DataFrame) -> pd.DataFrame:
             if treated.empty or control.empty:
                 continue
             diff = treated.mean() - control.mean()
+            ate_cond = conditional_ate(gdf, "Continue2", outcome, covariates)
             rows.append({
                 "group": group_name,
                 "outcome": outcome,
                 "treated_mean": treated.mean(),
                 "control_mean": control.mean(),
                 "point_estimate": diff,
+                "point_estimate_conditional": ate_cond,
+                "covariates": ",".join(covariates),
                 "n_treated": len(treated),
                 "n_control": len(control),
             })
@@ -53,15 +93,22 @@ def write_report(results: pd.DataFrame, output_dir: str) -> str:
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Q2 Strong Ignorability (Exogenous Switching) Report\n\n")
         f.write("## Method\n")
-        f.write("- Point estimates are computed as difference in means between treated and control, assuming unconfoundedness.\n\n")
+        f.write("- Unconditional: difference in observed treated and control means (assumes Y(0),Y(1) ⊥ D).\n")
+        f.write("- Conditional: g-computation regression adjustment on baseline covariates "
+                "(assumes Y(0),Y(1) ⊥ D | X). Covariates listed per group.\n\n")
         if results.empty:
             f.write("No valid rows produced.\n")
             return report_path
-        f.write("## Results (sample rows)\n")
-        f.write("| group | outcome | treated_mean | control_mean | point_estimate | n_treated | n_control |\n")
-        f.write("|---|---|---:|---:|---:|---:|---:|\n")
-        for _, row in results.head(12).iterrows():
-            f.write(f"| {row['group']} | {row['outcome']} | {row['treated_mean']:.4f} | {row['control_mean']:.4f} | {row['point_estimate']:.4f} | {int(row['n_treated'])} | {int(row['n_control'])} |\n")
+        f.write("## Results\n")
+        f.write("| group | outcome | treated_mean | control_mean | ATE_uncond | ATE_cond | covariates | n_treated | n_control |\n")
+        f.write("|---|---|---:|---:|---:|---:|---|---:|---:|\n")
+        for _, row in results.iterrows():
+            f.write(
+                f"| {row['group']} | {row['outcome']} | {row['treated_mean']:.4f} | "
+                f"{row['control_mean']:.4f} | {row['point_estimate']:.4f} | "
+                f"{row['point_estimate_conditional']:.4f} | {row['covariates']} | "
+                f"{int(row['n_treated'])} | {int(row['n_control'])} |\n"
+            )
     return report_path
 
 

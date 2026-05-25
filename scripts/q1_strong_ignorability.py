@@ -6,11 +6,49 @@ This script answers Q1 using point estimates (difference in means) as if treatme
 
 import argparse
 import os
+import numpy as np
 import pandas as pd
 
 from exam2026_core import validate_required_columns
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+COVARIATES = ["PTJE_RANKING", "PTJE_LYC", "PTJE_MAT", "VAI"]
+
+
+def _ols_predict(X_fit: np.ndarray, y_fit: np.ndarray, X_pred: np.ndarray) -> np.ndarray:
+    """Fit OLS y = X_fit beta and return predictions on X_pred. X already includes intercept."""
+    beta, *_ = np.linalg.lstsq(X_fit, y_fit, rcond=None)
+    return X_pred @ beta
+
+
+def conditional_ate(
+    sub: pd.DataFrame,
+    treatment_col: str,
+    outcome_col: str,
+    covariates: list,
+) -> float:
+    """Conditional strong-ignorability ATE via g-computation (outcome regression).
+
+    Fits two separate linear models mu_1(x), mu_0(x) on treated/control with observed outcome,
+    then averages the imputed difference over the full BAP subgroup with non-missing covariates.
+    """
+    needed = sub[[treatment_col, outcome_col] + covariates].copy()
+    needed = needed.dropna(subset=[treatment_col] + covariates)
+    if needed.empty:
+        return float("nan")
+    X_all = np.column_stack([np.ones(len(needed)), needed[covariates].to_numpy(dtype=float)])
+    treated_obs = needed[(needed[treatment_col] == 1) & needed[outcome_col].notna()]
+    control_obs = needed[(needed[treatment_col] == 0) & needed[outcome_col].notna()]
+    if len(treated_obs) <= len(covariates) + 1 or len(control_obs) <= len(covariates) + 1:
+        return float("nan")
+    X_t = np.column_stack([np.ones(len(treated_obs)), treated_obs[covariates].to_numpy(dtype=float)])
+    X_c = np.column_stack([np.ones(len(control_obs)), control_obs[covariates].to_numpy(dtype=float)])
+    y_t = treated_obs[outcome_col].to_numpy(dtype=float)
+    y_c = control_obs[outcome_col].to_numpy(dtype=float)
+    mu1 = _ols_predict(X_t, y_t, X_all)
+    mu0 = _ols_predict(X_c, y_c, X_all)
+    return float(np.mean(mu1 - mu0))
 
 
 def ensure_output_dir(base_output_dir: str) -> str:
@@ -39,12 +77,14 @@ def analyze_q1_strong_ignorability(df: pd.DataFrame) -> pd.DataFrame:
             if treated_obs.empty or control_obs.empty:
                 continue
             diff = treated_obs.mean() - control_obs.mean()
+            ate_cond = conditional_ate(bap, "Zk", outcome, COVARIATES)
             rows.append({
                 "k": k,
                 "outcome": outcome,
                 "treated_mean": treated_obs.mean(),
                 "control_mean": control_obs.mean(),
                 "point_estimate": diff,
+                "point_estimate_conditional": ate_cond,
                 "n_treated": len(treated_all),  # Include missing outcomes in count
                 "n_control": len(control_all),  # Include missing outcomes in count
             })
@@ -56,15 +96,22 @@ def write_report(results: pd.DataFrame, output_dir: str) -> str:
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Q1 Strong Ignorability (Exogenous Switching) Report\n\n")
         f.write("## Method\n")
-        f.write("- Point estimates are computed as difference in means between treated and control, assuming unconfoundedness.\n\n")
+        f.write("- Unconditional: difference in observed treated and control means (assumes Y(0),Y(1) ⊥ D).\n")
+        f.write(f"- Conditional: g-computation regression adjustment on covariates {COVARIATES} "
+                "(assumes Y(0),Y(1) ⊥ D | X).\n\n")
         if results.empty:
             f.write("No valid rows produced.\n")
             return report_path
         f.write("## Results (sample rows)\n")
-        f.write("| k | outcome | treated_mean | control_mean | point_estimate | n_treated | n_control |\n")
-        f.write("|---|---|---:|---:|---:|---:|---:|\n")
+        f.write("| k | outcome | treated_mean | control_mean | ATE_uncond | ATE_cond | n_treated | n_control |\n")
+        f.write("|---|---|---:|---:|---:|---:|---:|---:|\n")
         for _, row in results.head(12).iterrows():
-            f.write(f"| {int(row['k'])} | {row['outcome']} | {row['treated_mean']:.4f} | {row['control_mean']:.4f} | {row['point_estimate']:.4f} | {int(row['n_treated'])} | {int(row['n_control'])} |\n")
+            f.write(
+                f"| {int(row['k'])} | {row['outcome']} | {row['treated_mean']:.4f} | "
+                f"{row['control_mean']:.4f} | {row['point_estimate']:.4f} | "
+                f"{row['point_estimate_conditional']:.4f} | "
+                f"{int(row['n_treated'])} | {int(row['n_control'])} |\n"
+            )
     return report_path
 
 

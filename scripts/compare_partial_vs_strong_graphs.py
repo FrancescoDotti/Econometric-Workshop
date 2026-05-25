@@ -121,17 +121,28 @@ def make_q1_comparison_graphs(q1_partial: pd.DataFrame, q1_point: pd.DataFrame, 
                 label=f"{assumption} upper",
             )
 
-        # Overlay point-estimate curve from strong ignorability.
+        # Overlay strong-ignorability point estimates: unconditional and conditional.
         point = point.sort_values("k")
         plt.plot(
             point["k"],
             point["point_estimate"],
-            color=SOLARIZED["base01"],
-            linewidth=2.8,
+            color=SOLARIZED["base1"],
+            linewidth=2.0,
+            linestyle=(0, (3, 2)),
             marker="o",
             markersize=3,
-            label="strong ignorability point estimate",
+            label="strong ignorability (unconditional)",
         )
+        if "point_estimate_conditional" in point.columns:
+            plt.plot(
+                point["k"],
+                point["point_estimate_conditional"],
+                color=SOLARIZED["base01"],
+                linewidth=2.8,
+                marker="s",
+                markersize=4,
+                label="strong ignorability (conditional)",
+            )
 
         plt.axhline(0, color=SOLARIZED["base01"], linestyle=":" , linewidth=1.2)
         plt.xlabel("Threshold k")
@@ -185,7 +196,10 @@ def make_q2_comparison_graph(q2_partial: pd.DataFrame, q2_point: pd.DataFrame, q
     # Merge point estimates into the partial-ID table for plotting.
     point = q2_point.copy()
     point["label"] = point["group"] + " | " + point["outcome"]
-    point = point[["group", "outcome", "point_estimate", "label"]]
+    point_cols = ["group", "outcome", "point_estimate", "label"]
+    if "point_estimate_conditional" in point.columns:
+        point_cols.insert(3, "point_estimate_conditional")
+    point = point[point_cols]
 
     base = base.merge(point, on=["group", "outcome"], how="left")
     base["label"] = base["group"] + " | " + base["outcome"]
@@ -220,12 +234,29 @@ def make_q2_comparison_graph(q2_partial: pd.DataFrame, q2_point: pd.DataFrame, q
             alpha=0.95,
         )
 
-    # Draw one point for the strong-ignorability estimate per row.
+    # Draw strong-ignorability estimates per row: unconditional (open circle) and conditional (filled square).
+    has_cond = "point_estimate_conditional" in point.columns
     for label in row_order:
         p = point[point["label"] == label]
         if p.empty:
             continue
-        plt.plot(float(p.iloc[0]["point_estimate"]), y_map[label], "o", color=SOLARIZED["base01"], markersize=7)
+        plt.plot(
+            float(p.iloc[0]["point_estimate"]),
+            y_map[label],
+            "o",
+            markerfacecolor="none",
+            markeredgecolor=SOLARIZED["base1"],
+            markeredgewidth=1.5,
+            markersize=8,
+        )
+        if has_cond and pd.notna(p.iloc[0]["point_estimate_conditional"]):
+            plt.plot(
+                float(p.iloc[0]["point_estimate_conditional"]),
+                y_map[label],
+                "s",
+                color=SOLARIZED["base01"],
+                markersize=8,
+            )
 
     # Add reference line and labels.
     plt.axvline(0, color=SOLARIZED["base01"], linestyle="--", linewidth=1.2)
@@ -241,7 +272,9 @@ def make_q2_comparison_graph(q2_partial: pd.DataFrame, q2_point: pd.DataFrame, q
         Line2D([0], [0], color=colors["manski"], lw=3, label="Manski interval"),
         Line2D([0], [0], color=colors["mtr"], lw=3, label="MTR interval"),
         Line2D([0], [0], color=colors["mts"], lw=3, label="MTS interval"),
-        Line2D([0], [0], marker="o", color=SOLARIZED["base01"], lw=0, label="Strong ignorability point", markersize=7),
+        Line2D([0], [0], marker="o", markerfacecolor="none", markeredgecolor=SOLARIZED["base1"],
+               markeredgewidth=1.5, color="w", lw=0, label="SI unconditional", markersize=8),
+        Line2D([0], [0], marker="s", color=SOLARIZED["base01"], lw=0, label="SI conditional", markersize=8),
     ]
     plt.legend(handles=legend_handles, loc="best")
     plt.tight_layout()
